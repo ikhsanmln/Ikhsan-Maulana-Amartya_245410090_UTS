@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  postgres-master:
+    image: postgres:16-alpine
+    container_name: postgres-master
+    hostname: postgres-master
+    environment:
+      POSTGRES_USER: user_master
+      POSTGRES_PASSWORD: password_master
+      POSTGRES_DB: master_db
+      POSTGRES_REPLICATION_USER: rep_user  # User khusus replikasi
+      POSTGRES_REPLICATION_PASSWORD: rep_password
+    volumes:
+      - ./master.conf:/etc/postgresql/postgresql.conf # Memuat konfigurasi khusus
+      - master_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf # Menggunakan master.conf
+
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: postgres-replica
+    hostname: postgres-replica
+    environment:
+      POSTGRES_USER: user_replica
+      POSTGRES_PASSWORD: password_replica
+      POSTGRES_DB: replica_db
+      POSTGRES_MASTER_HOST: postgres-master # Hostname Master dari network Docker
+      POSTGRES_REPLICATION_USER: rep_user
+      POSTGRES_REPLICATION_PASSWORD: rep_password
+    volumes:
+      - replica_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432" # Replica diakses di port 5433
+    depends_on:
+      - postgres-master
+    # Skrip untuk inisialisasi Replica
+    command: |
+      /bin/sh -c '
+      until pg_isready -h postgres-master -U rep_user; do
+        echo "Waiting for Master to be ready..."
+        sleep 2
+      done;
+      
+      if [ ! -f /var/lib/postgresql/data/standby.signal ]; then
+        echo "Starting base backup and configuring Replica..."
+        # -R: Membuat standby.signal dan postgresql.auto.conf
+        # -S rep_slot: Menggunakan replication slot fisik untuk mencegah kehilangan WAL
+        pg_basebackup -h postgres-master -U rep_user -D /var/lib/postgresql/data -P -R -S rep_slot;
+        echo "Base backup complete."
+      fi;
+
+      exec postgres # Menjalankan PostgreSQL sebagai Standby
+      '
+
+volumes:
+  master_data:
+  replica_data:
