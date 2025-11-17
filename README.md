@@ -71,10 +71,12 @@ Dengan kata lain :
 
 ## 3. Langkah-Langkah Streaming Replication dengan Docker Compose
 
-1. Buat direktori proyek
-Buat satu folder baru untuk project, bernama pg-replication, folder ini akan berisi Docker Compose dan konfigurasi PostgreSQL. Di dalam folder project, buat dua folder:
-primary untuk konfigurasi server utama dan replica untuk konfigurasi server replika
-2. Buat file docker-compose.yml
-3. Buat Skrip Konfigurasi Primary
-4. Konfigurasi Replica
-5. Inisialisasi Replica
+1. **Buat direktori proyek**
+    Buat satu folder baru untuk project, bernama pg-replication, folder ini akan berisi Docker Compose dan konfigurasi PostgreSQL. Di dalam folder project, buat dua folder: primary untuk konfigurasi server utama dan replica untuk konfigurasi server replika
+2. **Buat file docker-compose.yml**
+    Kode tersebut membuat dua container PostgreSQL untuk kebutuhan streaming replication: primary dan replica. Container primary menjalankan PostgreSQL 16 dengan konfigurasi khusus yang di-mount dari folder primary, serta menggunakan volume primary_data untuk menyimpan data secara permanen. Primary terbuka di port 5432. Container replica juga memakai PostgreSQL 16 dan bergantung pada primary agar berjalan lebih dulu. Ia memakai konfigurasi berbeda dari folder replica dan menyimpan data di volume replica_data. Replica diekspose di port 5433. Kedua server menjalankan PostgreSQL dengan file konfigurasi masing-masing, sehingga primary berperan sebagai pengirim WAL dan replica sebagai penerima sinkronisasi data.
+3. **Buat Skrip Konfigurasi Primary**
+    Bagian konfigurasi tersebut digunakan untuk mengaktifkan fitur streaming replication pada PostgreSQL. Pengaturan wal_level = replica memastikan PostgreSQL menghasilkan log WAL yang cukup untuk dikirim ke server replika. Lalu, max_wal_senders = 10 menentukan jumlah maksimal proses pengirim WAL yang boleh berjalan, sehingga primary dapat melayani hingga 10 replica. Nilai wal_keep_size = 64 membuat PostgreSQL menyimpan WAL setidaknya sebesar 64 MB agar replica tidak ketinggalan data jika koneksi terputus sebentar. Baris listen_addresses = '*' mengizinkan server menerima koneksi dari semua alamat, termasuk dari container replica. Catatan terakhir menunjukkan bahwa metode autentikasi akan diatur menggunakan mode trust di dalam container agar koneksi replikasi lebih mudah tanpa password tambahan.
+4. **Konfigurasi Replica**
+    Bagian konfigurasi ini digunakan pada sisi replica agar dapat menerima dan mengikuti perubahan dari primary. Pengaturan hot_standby = on membuat replica bisa tetap melayani query read-only sambil menerima WAL dari primary. Sementara itu, primary_conninfo berisi informasi koneksi menuju server primary—mulai dari host, port, user, hingga password. Dengan konfigurasi ini, replica mengetahui ke mana harus terhubung untuk mengambil log WAL dan melakukan sinkronisasi data secara otomatis.
+5. **Inisialisasi Replica**
